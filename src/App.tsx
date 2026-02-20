@@ -3,155 +3,477 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
-import { motion } from 'motion/react';
-import { CheckCircle2, AlertCircle, Terminal, Rocket, Github, ExternalLink, ShieldCheck } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { 
+  Camera, 
+  RotateCcw, 
+  Play, 
+  Square, 
+  Settings, 
+  Type, 
+  Palette, 
+  Zap, 
+  ChevronUp, 
+  ChevronDown,
+  Download,
+  Trash2,
+  Edit3,
+  Check
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+
+// Types
+interface TeleprompterConfig {
+  fontSize: number;
+  color: string;
+  speed: number;
+  opacity: number;
+}
 
 export default function App() {
+  // Camera & Recording State
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  
+  // Teleprompter State
+  const [text, setText] = useState('欢迎使用智能提词器！点击右侧编辑按钮修改文字。您可以调节滚动速度、字体大小和颜色。录制完成后，视频将自动生成下载链接。');
+  const [isEditing, setIsEditing] = useState(false);
+  const [isScrolling, setIsScrolling] = useState(false);
+  const [config, setConfig] = useState<TeleprompterConfig>({
+    fontSize: 32,
+    color: '#ffffff',
+    speed: 2,
+    opacity: 0.4
+  });
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Refs
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const requestRef = useRef<number | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  
+  // Dragging State Refs
+  const isDragging = useRef(false);
+  const startY = useRef(0);
+  const startScrollTop = useRef(0);
+  const scrollPosRef = useRef(0);
+
+  // Initialize Camera
+  const initCamera = useCallback(async () => {
+    try {
+      // 1. Stop all existing tracks using the ref to ensure we catch everything
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => {
+          track.stop();
+        });
+        streamRef.current = null;
+      }
+      
+      // 2. Clear video source
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+
+      // 3. Request new stream with flexible constraints
+      const constraints = {
+        video: { 
+          facingMode: { ideal: facingMode },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: true
+      };
+
+      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      streamRef.current = newStream;
+      setStream(newStream);
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = newStream;
+        try {
+          await videoRef.current.play();
+        } catch (playErr) {
+          console.warn("Auto-play failed:", playErr);
+        }
+      }
+    } catch (err) {
+      console.error("Error accessing camera:", err);
+      // Fallback to basic constraints
+      try {
+        const basicStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        streamRef.current = basicStream;
+        setStream(basicStream);
+        if (videoRef.current) videoRef.current.srcObject = basicStream;
+      } catch (retryErr) {
+        console.error("Retry failed:", retryErr);
+      }
+    }
+  }, [facingMode]);
+
+  useEffect(() => {
+    initCamera();
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [initCamera]);
+
+  // Scrolling Logic
+  const animate = useCallback(() => {
+    if (isScrolling && scrollContainerRef.current && !isDragging.current) {
+      scrollPosRef.current += config.speed * 0.3; // Base speed
+      const maxScroll = scrollContainerRef.current.scrollHeight - scrollContainerRef.current.clientHeight;
+      
+      if (scrollPosRef.current >= maxScroll) {
+        scrollPosRef.current = maxScroll;
+        setIsScrolling(false);
+      }
+      
+      scrollContainerRef.current.scrollTop = scrollPosRef.current;
+    } else if (scrollContainerRef.current) {
+      // Sync ref with manual scroll
+      scrollPosRef.current = scrollContainerRef.current.scrollTop;
+    }
+    requestRef.current = requestAnimationFrame(animate);
+  }, [isScrolling, config.speed]);
+
+  useEffect(() => {
+    requestRef.current = requestAnimationFrame(animate);
+    return () => {
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+    };
+  }, [animate]);
+
+  // Mouse Drag Handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!scrollContainerRef.current) return;
+    isDragging.current = true;
+    startY.current = e.pageY - scrollContainerRef.current.offsetTop;
+    startScrollTop.current = scrollContainerRef.current.scrollTop;
+    setIsScrolling(false); // Pause auto-scroll on manual interaction
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging.current || !scrollContainerRef.current) return;
+    e.preventDefault();
+    const y = e.pageY - scrollContainerRef.current.offsetTop;
+    const walk = (y - startY.current) * 1.5; // Drag sensitivity
+    scrollContainerRef.current.scrollTop = startScrollTop.current - walk;
+  };
+
+  const handleMouseUp = () => {
+    isDragging.current = false;
+  };
+
+  const handleTouchStart = () => {
+    setIsScrolling(false); // Pause auto-scroll on touch
+  };
+
+  // Recording Logic
+  const startRecording = () => {
+    if (!stream) return;
+    setRecordedChunks([]);
+    setVideoUrl(null);
+    const options = { mimeType: 'video/webm;codecs=vp9,opus' };
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+      options.mimeType = 'video/webm';
+    }
+    
+    const recorder = new MediaRecorder(stream, options);
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) {
+        setRecordedChunks(prev => [...prev, e.data]);
+      }
+    };
+    recorder.onstop = () => {
+      const blob = new Blob(recordedChunks, { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      setVideoUrl(url);
+    };
+    
+    mediaRecorderRef.current = recorder;
+    recorder.start();
+    setIsRecording(true);
+    setIsScrolling(true);
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      setIsScrolling(false);
+    }
+  };
+
+  useEffect(() => {
+    if (recordedChunks.length > 0 && !isRecording) {
+      const blob = new Blob(recordedChunks, { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      setVideoUrl(url);
+    }
+  }, [recordedChunks, isRecording]);
+
+  const toggleCamera = () => {
+    setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
+  };
+
+  const handleDownload = () => {
+    if (videoUrl) {
+      const a = document.createElement('a');
+      a.href = videoUrl;
+      a.download = `teleprompter_video_${new Date().getTime()}.webm`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[#f5f5f5] text-[#1a1a1a] font-sans selection:bg-black selection:text-white">
-      {/* Navigation */}
-      <nav className="border-b border-black/5 bg-white/80 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center">
-              <Rocket className="w-5 h-5 text-white" />
-            </div>
-            <span className="font-semibold tracking-tight">BuildReady</span>
+    <div className="fixed inset-0 bg-black overflow-hidden font-sans text-white">
+      {/* Camera Preview */}
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        className={`absolute inset-0 w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`}
+      />
+
+      {/* Teleprompter Overlay */}
+      <div 
+        className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none"
+        style={{ paddingBottom: '20vh' }}
+      >
+        <div 
+          ref={scrollContainerRef}
+          className="w-full max-w-2xl h-[50vh] overflow-y-auto pointer-events-auto hide-scrollbar select-none active:cursor-grabbing cursor-grab"
+          style={{ 
+            backgroundColor: `rgba(0,0,0,${config.opacity})`,
+            maskImage: 'linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)'
+          }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onTouchStart={handleTouchStart}
+        >
+          <div className="py-[25vh] px-8">
+            <p 
+              style={{ 
+                fontSize: `${config.fontSize}px`, 
+                color: config.color,
+                lineHeight: 1.5,
+                textAlign: 'center',
+                fontWeight: 600,
+                textShadow: '0 2px 4px rgba(0,0,0,0.5)'
+              }}
+            >
+              {text}
+            </p>
           </div>
-          <div className="flex items-center gap-6">
-            <a href="#" className="text-sm font-medium text-black/60 hover:text-black transition-colors">Documentation</a>
-            <a href="#" className="text-sm font-medium text-black/60 hover:text-black transition-colors">Templates</a>
-            <button className="bg-black text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-black/80 transition-all active:scale-95">
-              Deploy Now
+        </div>
+        
+        {/* Focus Line */}
+        <div className="absolute top-1/2 left-0 right-0 h-1 bg-emerald-500/50 -translate-y-1/2 pointer-events-none" />
+      </div>
+
+      {/* Main Controls */}
+      <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/80 to-transparent flex flex-col gap-6">
+        
+        {/* Top Row: Quick Actions */}
+        <div className="flex justify-between items-center">
+          <button 
+            onClick={() => setShowSettings(!showSettings)}
+            className="p-3 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 transition-colors"
+          >
+            <Settings className="w-6 h-6" />
+          </button>
+
+          <div className="flex gap-4">
+            <button 
+              onClick={() => {
+                scrollPosRef.current = 0;
+                if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+              }}
+              className="p-3 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 transition-colors"
+            >
+              <RotateCcw className="w-6 h-6" />
+            </button>
+            <button 
+              onClick={toggleCamera}
+              className="p-3 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 transition-colors"
+            >
+              <Camera className="w-6 h-6" />
+            </button>
+            <button 
+              onClick={() => setIsEditing(true)}
+              className="p-3 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 transition-colors"
+            >
+              <Edit3 className="w-6 h-6" />
             </button>
           </div>
         </div>
-      </nav>
 
-      <main className="max-w-7xl mx-auto px-6 py-12">
-        {/* Hero Section */}
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="text-center mb-20"
-        >
-          <h1 className="text-6xl font-bold tracking-tighter mb-6">
-            Production-Ready <br />
-            <span className="text-black/40">React Architecture</span>
-          </h1>
-          <p className="text-xl text-black/60 max-w-2xl mx-auto leading-relaxed">
-            A meticulously crafted template designed to eliminate deployment friction and provide a solid foundation for your next big idea.
-          </p>
-        </motion.div>
-
-        {/* Build Status Card */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-20">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.2 }}
-            className="lg:col-span-2 bg-white rounded-[32px] p-8 shadow-sm border border-black/5"
+        {/* Bottom Row: Recording */}
+        <div className="flex justify-center items-center gap-8">
+          <button 
+            onClick={() => setIsScrolling(!isScrolling)}
+            className={`p-4 rounded-full transition-all ${isScrolling ? 'bg-emerald-500' : 'bg-white/20'}`}
           >
-            <div className="flex items-center justify-between mb-8">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-emerald-50 rounded-full flex items-center justify-center">
-                  <CheckCircle2 className="w-6 h-6 text-emerald-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold">Build Status</h3>
-                  <p className="text-xs text-black/40 uppercase tracking-widest font-medium">Last check: Just now</p>
-                </div>
-              </div>
-              <span className="px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-full uppercase tracking-wider">
-                Passing
-              </span>
-            </div>
+            {isScrolling ? <Square className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current" />}
+          </button>
 
-            <div className="space-y-4">
-              <div className="p-4 bg-[#f9f9f9] rounded-2xl flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <Terminal className="w-5 h-5 text-black/40" />
-                  <span className="text-sm font-mono">vite build</span>
-                </div>
-                <span className="text-xs font-mono text-emerald-600">0.44s</span>
-              </div>
-              <div className="p-4 bg-[#f9f9f9] rounded-2xl flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <ShieldCheck className="w-5 h-5 text-black/40" />
-                  <span className="text-sm font-mono">tsc --noEmit</span>
-                </div>
-                <span className="text-xs font-mono text-emerald-600">1.2s</span>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* Quick Fixes */}
-          <motion.div 
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.3 }}
-            className="bg-black text-white rounded-[32px] p-8 flex flex-col justify-between"
+          <button 
+            onClick={isRecording ? stopRecording : startRecording}
+            className={`w-20 h-20 rounded-full border-4 flex items-center justify-center transition-all ${
+              isRecording ? 'border-red-500 bg-red-500/20' : 'border-white bg-white/10'
+            }`}
           >
-            <div>
-              <div className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center mb-6">
-                <AlertCircle className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-xl font-semibold mb-4">Troubleshooting Build Errors</h3>
-              <p className="text-white/60 text-sm leading-relaxed mb-6">
-                Seeing "Failed to resolve index.tsx"? Ensure your index.html points to the correct entry point (usually src/main.tsx).
-              </p>
-            </div>
-            <div className="space-y-3">
-              <div className="text-xs font-mono text-white/40 bg-white/5 p-3 rounded-xl border border-white/10">
-                &lt;script src="/src/main.tsx"&gt;
-              </div>
-              <button className="w-full py-3 bg-white text-black rounded-2xl text-sm font-semibold hover:bg-white/90 transition-colors">
-                View Fix Guide
+            <div className={`transition-all ${isRecording ? 'w-8 h-8 bg-red-500 rounded-sm' : 'w-14 h-14 bg-red-500 rounded-full'}`} />
+          </button>
+
+          <div className="w-14" /> {/* Spacer */}
+        </div>
+      </div>
+
+      {/* Settings Panel */}
+      <AnimatePresence>
+        {showSettings && (
+          <motion.div 
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            className="absolute bottom-0 left-0 right-0 bg-zinc-900 rounded-t-3xl p-8 z-50 shadow-2xl"
+          >
+            <div className="flex justify-between items-center mb-8">
+              <h3 className="text-xl font-bold">提词器设置</h3>
+              <button onClick={() => setShowSettings(false)} className="p-2 hover:bg-white/10 rounded-full">
+                <ChevronDown className="w-6 h-6" />
               </button>
             </div>
+
+            <div className="space-y-8">
+              {/* Font Size */}
+              <div className="space-y-4">
+                <div className="flex justify-between text-sm text-zinc-400">
+                  <span className="flex items-center gap-2"><Type className="w-4 h-4" /> 字号</span>
+                  <span>{config.fontSize}px</span>
+                </div>
+                <input 
+                  type="range" min="16" max="64" value={config.fontSize}
+                  onChange={(e) => setConfig({...config, fontSize: parseInt(e.target.value)})}
+                  className="w-full accent-emerald-500"
+                />
+              </div>
+
+              {/* Speed */}
+              <div className="space-y-4">
+                <div className="flex justify-between text-sm text-zinc-400">
+                  <span className="flex items-center gap-2"><Zap className="w-4 h-4" /> 滚动速度</span>
+                  <span>{config.speed}x</span>
+                </div>
+                <input 
+                  type="range" min="1" max="10" step="0.5" value={config.speed}
+                  onChange={(e) => setConfig({...config, speed: parseFloat(e.target.value)})}
+                  className="w-full accent-emerald-500"
+                />
+              </div>
+
+              {/* Color */}
+              <div className="space-y-4">
+                <div className="flex justify-between text-sm text-zinc-400">
+                  <span className="flex items-center gap-2"><Palette className="w-4 h-4" /> 文字颜色</span>
+                </div>
+                <div className="flex gap-4">
+                  {['#ffffff', '#ffff00', '#00ff00', '#00ffff', '#ff00ff'].map(c => (
+                    <button 
+                      key={c}
+                      onClick={() => setConfig({...config, color: c})}
+                      className={`w-10 h-10 rounded-full border-2 transition-transform ${config.color === c ? 'scale-125 border-white' : 'border-transparent'}`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
           </motion.div>
-        </div>
+        )}
+      </AnimatePresence>
 
-        {/* Features Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[
-            { title: 'Vite 6', desc: 'Lightning fast HMR and optimized production builds.' },
-            { title: 'Tailwind 4', desc: 'The latest utility-first CSS framework for rapid UI.' },
-            { title: 'TypeScript', desc: 'Strict type safety for robust application logic.' },
-            { title: 'Motion', desc: 'Fluid animations and transitions out of the box.' },
-          ].map((feature, i) => (
-            <motion.div 
-              key={i}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 + (i * 0.1) }}
-              className="p-6 bg-white rounded-2xl border border-black/5 hover:border-black/10 transition-colors group"
-            >
-              <h4 className="font-bold mb-2 group-hover:text-black transition-colors">{feature.title}</h4>
-              <p className="text-sm text-black/50 leading-relaxed">{feature.desc}</p>
-            </motion.div>
-          ))}
-        </div>
-      </main>
+      {/* Text Editor */}
+      <AnimatePresence>
+        {isEditing && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-black/95 z-[60] p-8 flex flex-col"
+          >
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold">编辑台词</h3>
+              <button 
+                onClick={() => setIsEditing(false)}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-500 rounded-full font-bold"
+              >
+                <Check className="w-5 h-5" /> 完成
+              </button>
+            </div>
+            <textarea 
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              className="flex-1 bg-zinc-900 rounded-2xl p-6 text-xl outline-none border border-zinc-800 focus:border-emerald-500 transition-colors resize-none"
+              placeholder="请输入您的台词..."
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Footer */}
-      <footer className="max-w-7xl mx-auto px-6 py-12 border-t border-black/5 mt-20">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-2 opacity-40">
-            <Rocket className="w-4 h-4" />
-            <span className="text-xs font-bold uppercase tracking-widest">BuildReady v1.0.0</span>
-          </div>
-          <div className="flex items-center gap-8">
-            <a href="#" className="text-xs font-bold uppercase tracking-widest text-black/40 hover:text-black transition-colors">Privacy</a>
-            <a href="#" className="text-xs font-bold uppercase tracking-widest text-black/40 hover:text-black transition-colors">Terms</a>
-            <a href="#" className="text-xs font-bold uppercase tracking-widest text-black/40 hover:text-black transition-colors flex items-center gap-1">
-              Github <ExternalLink className="w-3 h-3" />
-            </a>
-          </div>
-        </div>
-      </footer>
+      {/* Recording Result */}
+      <AnimatePresence>
+        {videoUrl && !isRecording && (
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="absolute inset-0 z-[70] bg-black/90 flex items-center justify-center p-6"
+          >
+            <div className="bg-zinc-900 rounded-3xl p-8 w-full max-w-md space-y-6">
+              <h3 className="text-2xl font-bold text-center">录制完成！</h3>
+              <video src={videoUrl} controls className="w-full rounded-xl aspect-video bg-black" />
+              <div className="grid grid-cols-2 gap-4">
+                <button 
+                  onClick={handleDownload}
+                  className="flex items-center justify-center gap-2 py-4 bg-emerald-500 rounded-xl font-bold hover:bg-emerald-600 transition-colors"
+                >
+                  <Download className="w-5 h-5" /> 保存视频
+                </button>
+                <button 
+                  onClick={() => setVideoUrl(null)}
+                  className="flex items-center justify-center gap-2 py-4 bg-zinc-800 rounded-xl font-bold hover:bg-zinc-700 transition-colors"
+                >
+                  <Trash2 className="w-5 h-5" /> 重新录制
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <style>{`
+        .hide-scrollbar::-webkit-scrollbar {
+          display: none;
+        }
+        .hide-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+      `}</style>
     </div>
   );
 }

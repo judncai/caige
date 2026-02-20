@@ -1,0 +1,5 @@
+{
+  "name": "智能手机提词器",
+  "description": "一款专业的手机口播提词器，支持边录边看、自定义字体颜色字号、滚动速度调节及前后摄像头切换。",
+  "requestFramePermissions": ["camera", "microphone"]
+}
