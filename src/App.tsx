@@ -18,7 +18,8 @@ import {
   Download,
   Trash2,
   Edit3,
-  Check
+  Check,
+  Share2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -257,11 +258,34 @@ export default function App() {
     document.body.removeChild(a);
   };
 
+  const shareApp = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: '蔡哥保平安提词器',
+          text: '推荐一个超好用的专业口播提词器！',
+          url: window.location.href,
+        });
+      } catch (err) {
+        console.error("Share app failed:", err);
+      }
+    } else {
+      // Fallback: Copy to clipboard
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        alert('应用链接已复制到剪贴板，快去分享给朋友吧！');
+      } catch (err) {
+        console.error("Copy failed:", err);
+      }
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black overflow-hidden font-sans text-white">
       {/* App Icon/Logo */}
-      <div className="absolute top-6 left-6 z-50 flex items-center gap-3 pointer-events-none">
-        <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg border border-white/20">
+      <div className="absolute top-6 right-6 z-50 flex items-center gap-3 pointer-events-none">
+        <span className="font-bold text-lg tracking-tight drop-shadow-md hidden sm:block">蔡哥保平安提词器</span>
+        <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg border border-white/20 bg-sky-500 flex items-center justify-center">
           <img 
             src="https://files.oaiusercontent.com/file-S4Y2f8X9J8X9J8X9J8X9J8X9" 
             alt="App Icon" 
@@ -269,7 +293,6 @@ export default function App() {
             referrerPolicy="no-referrer"
           />
         </div>
-        <span className="font-bold text-lg tracking-tight drop-shadow-md hidden sm:block">蔡哥保平安提词器</span>
       </div>
 
       {/* Camera Preview */}
@@ -332,6 +355,13 @@ export default function App() {
           </button>
 
           <div className="flex gap-4">
+            <button 
+              onClick={shareApp}
+              className="p-3 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 transition-colors"
+              title="分享应用"
+            >
+              <Share2 className="w-6 h-6" />
+            </button>
             <button 
               onClick={() => {
                 scrollPosRef.current = 0;
