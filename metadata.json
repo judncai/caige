@@ -1,5 +1,8 @@
 {
-  "name": "智能提词器",
+  "name": "蔡哥保平安【提词器】",
   "description": "专业口播提词器，支持高清录制、自定义文字及专业音频采集。",
-  "requestFramePermissions": ["camera", "microphone"]
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
 }
