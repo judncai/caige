@@ -40,7 +40,7 @@ export default function App() {
   const recordedChunksRef = useRef<Blob[]>([]);
   
   // Teleprompter State
-  const [text, setText] = useState('欢迎使用蔡哥保平安提词器！点击右侧编辑按钮修改文字。您可以调节滚动速度、字体大小和颜色。录制完成后，视频将自动生成下载链接。');
+  const [text, setText] = useState('欢迎使用智能提词器！点击右侧编辑按钮修改文字。您可以调节滚动速度、字体大小和颜色。录制完成后，视频将自动生成下载链接。');
   const [isEditing, setIsEditing] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
   const [config, setConfig] = useState<TeleprompterConfig>({
@@ -262,7 +262,7 @@ export default function App() {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: '蔡哥保平安提词器',
+          title: '智能提词器',
           text: '推荐一个超好用的专业口播提词器！',
           url: window.location.href,
         });
@@ -282,18 +282,6 @@ export default function App() {
 
   return (
     <div className="fixed inset-0 bg-black overflow-hidden font-sans text-white">
-      {/* App Icon/Logo */}
-      <div className="absolute top-6 right-6 z-50 flex items-center gap-3 pointer-events-none">
-        <span className="font-bold text-lg tracking-tight drop-shadow-md hidden sm:block">蔡哥保平安提词器</span>
-        <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg border border-white/20 bg-sky-500 flex items-center justify-center">
-          <img 
-            src="https://files.oaiusercontent.com/file-S4Y2f8X9J8X9J8X9J8X9J8X9" 
-            alt="App Icon" 
-            className="w-full h-full object-cover"
-            referrerPolicy="no-referrer"
-          />
-        </div>
-      </div>
 
       {/* Camera Preview */}
       <video
