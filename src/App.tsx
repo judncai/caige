@@ -39,7 +39,7 @@ export default function App() {
   const recordedChunksRef = useRef<Blob[]>([]);
   
   // Teleprompter State
-  const [text, setText] = useState('欢迎使用智能提词器！点击右侧编辑按钮修改文字。您可以调节滚动速度、字体大小和颜色。录制完成后，视频将自动生成下载链接。');
+  const [text, setText] = useState('欢迎使用蔡哥保平安提词器！点击右侧编辑按钮修改文字。您可以调节滚动速度、字体大小和颜色。录制完成后，视频将自动生成下载链接。');
   const [isEditing, setIsEditing] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
   const [config, setConfig] = useState<TeleprompterConfig>({
@@ -86,7 +86,11 @@ export default function App() {
           width: { ideal: 1280 },
           height: { ideal: 720 }
         },
-        audio: true
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: true
+        }
       };
 
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -265,7 +269,7 @@ export default function App() {
             referrerPolicy="no-referrer"
           />
         </div>
-        <span className="font-bold text-lg tracking-tight drop-shadow-md hidden sm:block">智能提词器</span>
+        <span className="font-bold text-lg tracking-tight drop-shadow-md hidden sm:block">蔡哥保平安提词器</span>
       </div>
 
       {/* Camera Preview */}
