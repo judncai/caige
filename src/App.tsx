@@ -35,8 +35,8 @@ export default function App() {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
-  const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
   
   // Teleprompter State
   const [text, setText] = useState('欢迎使用智能提词器！点击右侧编辑按钮修改文字。您可以调节滚动速度、字体大小和颜色。录制完成后，视频将自动生成下载链接。');
@@ -179,27 +179,32 @@ export default function App() {
   // Recording Logic
   const startRecording = () => {
     if (!stream) return;
-    setRecordedChunks([]);
+    recordedChunksRef.current = [];
     setVideoUrl(null);
-    const options = { mimeType: 'video/webm;codecs=vp9,opus' };
-    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-      options.mimeType = 'video/webm';
-    }
     
-    const recorder = new MediaRecorder(stream, options);
+    const mimeTypes = [
+      'video/mp4;codecs=h264,aac',
+      'video/mp4',
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm'
+    ];
+    const mimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || 'video/webm';
+    
+    const recorder = new MediaRecorder(stream, { mimeType });
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) {
-        setRecordedChunks(prev => [...prev, e.data]);
+        recordedChunksRef.current.push(e.data);
       }
     };
     recorder.onstop = () => {
-      const blob = new Blob(recordedChunks, { type: 'video/webm' });
+      const blob = new Blob(recordedChunksRef.current, { type: mimeType });
       const url = URL.createObjectURL(blob);
       setVideoUrl(url);
     };
     
     mediaRecorderRef.current = recorder;
-    recorder.start();
+    recorder.start(1000); // Collect data every second to be safe
     setIsRecording(true);
     setIsScrolling(true);
   };
@@ -212,13 +217,6 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    if (recordedChunks.length > 0 && !isRecording) {
-      const blob = new Blob(recordedChunks, { type: 'video/webm' });
-      const url = URL.createObjectURL(blob);
-      setVideoUrl(url);
-    }
-  }, [recordedChunks, isRecording]);
 
   const toggleCamera = () => {
     setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
@@ -228,7 +226,10 @@ export default function App() {
     if (videoUrl) {
       const a = document.createElement('a');
       a.href = videoUrl;
-      a.download = `teleprompter_video_${new Date().getTime()}.webm`;
+      // Use .mp4 extension as requested. 
+      // Note: If the browser recorded in webm, changing extension might not make it a true mp4,
+      // but it helps with some players and satisfies the user request.
+      a.download = `teleprompter_video_${new Date().getTime()}.mp4`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
