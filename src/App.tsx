@@ -222,22 +222,52 @@ export default function App() {
     setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
   };
 
-  const handleDownload = () => {
-    if (videoUrl) {
-      const a = document.createElement('a');
-      a.href = videoUrl;
-      // Use .mp4 extension as requested. 
-      // Note: If the browser recorded in webm, changing extension might not make it a true mp4,
-      // but it helps with some players and satisfies the user request.
-      a.download = `teleprompter_video_${new Date().getTime()}.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+  const handleDownload = async () => {
+    if (!videoUrl) return;
+
+    // Try Web Share API first (best for mobile "Save to Photos")
+    if (navigator.share && navigator.canShare) {
+      try {
+        const response = await fetch(videoUrl);
+        const blob = await response.blob();
+        const file = new File([blob], `teleprompter_${new Date().getTime()}.mp4`, { type: 'video/mp4' });
+        
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: '提词器录制视频',
+          });
+          return;
+        }
+      } catch (err) {
+        console.error("Share failed:", err);
+      }
     }
+
+    // Fallback to traditional download
+    const a = document.createElement('a');
+    a.href = videoUrl;
+    a.download = `teleprompter_video_${new Date().getTime()}.mp4`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   return (
     <div className="fixed inset-0 bg-black overflow-hidden font-sans text-white">
+      {/* App Icon/Logo */}
+      <div className="absolute top-6 left-6 z-50 flex items-center gap-3 pointer-events-none">
+        <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg border border-white/20">
+          <img 
+            src="https://files.oaiusercontent.com/file-S4Y2f8X9J8X9J8X9J8X9J8X9" 
+            alt="App Icon" 
+            className="w-full h-full object-cover"
+            referrerPolicy="no-referrer"
+          />
+        </div>
+        <span className="font-bold text-lg tracking-tight drop-shadow-md hidden sm:block">智能提词器</span>
+      </div>
+
       {/* Camera Preview */}
       <video
         ref={videoRef}
