@@ -8,3 +8,13 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 );
+// ...existing code...
+import { registerSW } from 'virtual:pwa-register'
+
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  const updateSW = registerSW({
+    onRegistered(r) { console.log('SW registered', r) },
+    onRegisterError(err) { console.warn('SW register error', err) }
+  })
+}
+// ...existing code...
