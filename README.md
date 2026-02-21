@@ -1,20 +1,50 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# 蔡哥保平安【提词器】
 
-# Run and deploy your AI Studio app
+这是一个专业、简洁的口播提词器网页应用，支持高清视频录制、自定义文字滚动、音频优化采集等功能。
 
-This contains everything you need to run your app locally.
+## 功能特点
+- **专业提词**：支持自定义文字、滚动速度、字体大小及背景透明度。
+- **高清录制**：直接调用摄像头进行录制，支持前置/后置摄像头切换。
+- **音质优化**：针对口播场景优化了音频采集，声音更清脆。
+- **本地导出**：录制完成后直接在浏览器本地生成视频，不消耗服务器流量。
+- **响应式设计**：完美适配手机端和电脑端。
+- **PWA 支持**：可“添加到主屏幕”作为独立 App 使用。
 
-View your app in AI Studio: https://ai.studio/apps/e24203c7-1ff5-4cc4-a5d5-c06a2ffe0b08
+## 开发与部署
 
-## Run Locally
+### 1. 本地运行
+```bash
+# 安装依赖
+npm install
 
-**Prerequisites:**  Node.js
+# 启动开发服务器
+npm run dev
+```
 
+### 2. 自定义 LOGO
+将您的 LOGO 图片命名为 `logo.png`，放入 `public` 文件夹中即可。
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### 3. 打包部署 (宝塔面板/静态托管)
+```bash
+# 生成静态文件
+npm run build
+```
+执行后会生成 `dist` 文件夹。将 `dist` 文件夹内的所有内容上传到您的服务器根目录即可。
+
+**宝塔面板伪静态设置：**
+如果您使用了路由功能，请在伪静态中添加：
+```nginx
+location / {
+  try_files $uri $uri/ /index.html;
+}
+```
+
+## 技术栈
+- React 19
+- Vite
+- Tailwind CSS
+- Lucide React (图标)
+- Motion (动画)
+
+## 许可证
+Apache-2.0

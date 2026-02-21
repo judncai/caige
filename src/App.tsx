@@ -282,6 +282,22 @@ export default function App() {
 
   return (
     <div className="fixed inset-0 bg-black overflow-hidden font-sans text-white">
+      {/* 网站 LOGO 区域 - 建议将 logo.png 放在 public 文件夹下 */}
+      <div className="absolute top-6 left-6 z-50 flex items-center gap-3 pointer-events-none opacity-80">
+        <div className="w-10 h-10 rounded-lg overflow-hidden border border-white/20 bg-white/10 backdrop-blur-sm flex items-center justify-center">
+          <img 
+            src="/logo.png" 
+            alt="LOGO" 
+            className="w-full h-full object-contain"
+            onError={(e) => {
+              // 如果图片加载失败，显示一个文字占位符
+              (e.target as HTMLImageElement).style.display = 'none';
+              (e.target as HTMLImageElement).parentElement!.innerHTML = '<span class="text-xs font-bold">LOGO</span>';
+            }}
+          />
+        </div>
+        <span className="font-bold text-sm tracking-widest drop-shadow-md hidden sm:block">蔡哥保平安</span>
+      </div>
 
       {/* Camera Preview */}
       <video
